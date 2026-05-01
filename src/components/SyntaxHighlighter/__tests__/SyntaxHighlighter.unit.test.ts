@@ -1,6 +1,8 @@
+import { tokenStyles } from "../SyntaxHighlighter.styles";
 import { buildSyntaxRegex } from "../SyntaxHighlighter.regex";
-import { TokenKind, LexedToken } from "../pipeline/types";
+import { TokenGroup, TokenKind, LexedToken } from "../pipeline/types";
 import { tokenizeLine } from "../pipeline/tokenizeLine";
+import { groupTokensByStyle } from "../pipeline/groupTokensByStyle";
 
 const tw = (text: string, kind: TokenKind, trailingSpace = false): LexedToken => ({
   text,
@@ -170,6 +172,161 @@ describe("tokenizeLine", () => {
         tw("123", "number", true),
         tw("}", "brace"),
         tw(";", "punctuation"),
+      ]);
+    });
+  });
+});
+
+describe("groupTokensByStyle", () => {
+  describe("color-based grouping", () => {
+    it("should group consecutive tokens with the same kind into one group", () => {
+      const input: LexedToken[] = [tw("const", "keyword"), tw("function", "keyword")];
+
+      expect(groupTokensByStyle(input, [])).toEqual<TokenGroup[]>([
+        { text: "constfunction", className: tokenStyles.keyword },
+      ]);
+    });
+
+    it("should split tokens with different kinds into separate groups", () => {
+      const input: LexedToken[] = [tw("const", "keyword"), tw("x", "default")];
+
+      expect(groupTokensByStyle(input, [])).toEqual<TokenGroup[]>([
+        { text: "const", className: tokenStyles.keyword },
+        { text: "x", className: tokenStyles.default },
+      ]);
+    });
+
+    it("should return an empty array for empty input", () => {
+      expect(groupTokensByStyle([], [])).toEqual([]);
+    });
+  });
+
+  describe("colon isolation", () => {
+    it("should always give the colon its own group", () => {
+      const input: LexedToken[] = [
+        tw("key", "default"),
+        tw(":", "punctuation"),
+        tw("value", "default"),
+      ];
+
+      expect(groupTokensByStyle(input, [])).toEqual<TokenGroup[]>([
+        { text: "key", className: tokenStyles.default },
+        { text: ":", className: tokenStyles.punctuation },
+        { text: "value", className: tokenStyles.default },
+      ]);
+    });
+
+    it("should isolate a colon even when it carries a trailing space", () => {
+      const input: LexedToken[] = [
+        tw("key", "default"),
+        tw(":", "punctuation", true),
+        tw("value", "default"),
+      ];
+
+      expect(groupTokensByStyle(input, [])).toEqual<TokenGroup[]>([
+        { text: "key", className: tokenStyles.default },
+        { text: ": ", className: tokenStyles.punctuation },
+        { text: "value", className: tokenStyles.default },
+      ]);
+    });
+
+    it("should give the colon the functionKey style when preceded by a functionKey token", () => {
+      const input: LexedToken[] = [tw("handler", "functionKey"), tw(":", "punctuation")];
+
+      expect(groupTokensByStyle(input, [])).toEqual<TokenGroup[]>([
+        { text: "handler", className: tokenStyles.functionKey },
+        { text: ":", className: tokenStyles.functionKey },
+      ]);
+    });
+  });
+
+  describe("special value coloring", () => {
+    it("should apply special value coloring when a configured trigger key precedes a colon", () => {
+      const specialValues = [{ triggerKey: "tag", valueColor: tokenStyles.special }];
+
+      const input: LexedToken[] = [
+        tw("tag", "default"),
+        tw(":", "punctuation"),
+        tw("Primary", "default"),
+        tw(",", "punctuation"),
+      ];
+
+      expect(groupTokensByStyle(input, specialValues)).toEqual<TokenGroup[]>([
+        { text: "tag", className: tokenStyles.default },
+        { text: ":", className: tokenStyles.punctuation },
+        { text: "Primary", className: tokenStyles.special },
+        { text: ",", className: tokenStyles.punctuation },
+      ]);
+    });
+
+    it("should not trigger special coloring when the trigger key has a non-default kind", () => {
+      const specialValues = [{ triggerKey: "tag", valueColor: tokenStyles.special }];
+
+      const input: LexedToken[] = [
+        tw("tag", "keyword"),
+        tw(":", "punctuation"),
+        tw("Primary", "default"),
+      ];
+
+      expect(groupTokensByStyle(input, specialValues)).toEqual<TokenGroup[]>([
+        { text: "tag", className: tokenStyles.keyword },
+        { text: ":", className: tokenStyles.punctuation },
+        { text: "Primary", className: tokenStyles.default },
+      ]);
+    });
+
+    it("should not trigger special coloring when the token before the colon does not match any trigger key", () => {
+      const specialValues = [{ triggerKey: "tag", valueColor: tokenStyles.special }];
+
+      const input: LexedToken[] = [
+        tw("otherKey", "default"),
+        tw(":", "punctuation"),
+        tw("value", "default"),
+      ];
+
+      expect(groupTokensByStyle(input, specialValues)).toEqual<TokenGroup[]>([
+        { text: "otherKey", className: tokenStyles.default },
+        { text: ":", className: tokenStyles.punctuation },
+        { text: "value", className: tokenStyles.default },
+      ]);
+    });
+
+    it("should group multiple special value tokens into one group", () => {
+      const specialValues = [{ triggerKey: "tag", valueColor: tokenStyles.special }];
+
+      const input: LexedToken[] = [
+        tw("tag", "default"),
+        tw(":", "punctuation"),
+        tw("Alpha", "default"),
+        tw("Beta", "default"),
+        tw("Gamma", "default"),
+        tw(",", "punctuation"),
+      ];
+
+      expect(groupTokensByStyle(input, specialValues)).toEqual<TokenGroup[]>([
+        { text: "tag", className: tokenStyles.default },
+        { text: ":", className: tokenStyles.punctuation },
+        { text: "AlphaBetaGamma", className: tokenStyles.special },
+        { text: ",", className: tokenStyles.punctuation },
+      ]);
+    });
+
+    it("should keep special mode active when terminator appears mid-line", () => {
+      const specialValues = [{ triggerKey: "info", valueColor: tokenStyles.special }];
+      const input: LexedToken[] = [
+        tw("info", "default"),
+        tw(":", "punctuation"),
+        tw("Alpha", "default"),
+        tw(",", "punctuation"),
+        tw("Beta", "default"),
+        tw(",", "punctuation"),
+      ];
+
+      expect(groupTokensByStyle(input, specialValues)).toEqual<TokenGroup[]>([
+        { text: "info", className: tokenStyles.default },
+        { text: ":", className: tokenStyles.punctuation },
+        { text: "Alpha,Beta", className: tokenStyles.special },
+        { text: ",", className: tokenStyles.punctuation },
       ]);
     });
   });

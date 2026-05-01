@@ -11,6 +11,7 @@ const tokenStyles = {
   string: "text-yellow-400",
   quote: "text-gray-400",
   functionKey: "text-green-400",
+  special: "text-cyan-400",
   default: "text-white",
 } as const;
 
